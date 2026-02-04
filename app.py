@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Grade Mestra Pro", layout="wide")
 
-# Estilos de Visualização
+# CSS para garantir que a tabela fique legível e pronta para print
 st.markdown("""
 <style>
     @media print { .no-print, .stSidebar, button { display: none !important; } }
@@ -14,23 +14,10 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- INICIALIZAÇÃO DE MEMÓRIA CRÍTICA ---
-# Isso garante que os horários não resetem ao interagir com a tela
-if 'config' not in st.session_state:
-    st.session_state.config = {
-        "Matutino_ini": datetime.strptime("07:07", "%H:%M").time(),
-        "Matutino_rec": datetime.strptime("09:15", "%H:%M").time(),
-        "Vespertino_ini": datetime.strptime("13:03", "%H:%M").time(),
-        "Vespertino_rec": datetime.strptime("15:15", "%H:%M").time(),
-        "Noturno_ini": datetime.strptime("18:30", "%H:%M").time(),
-        "Noturno_rec": datetime.strptime("20:30", "%H:%M").time(),
-        "salas": [],
-        "profs": []
-    }
-
 st.title("📚 Grade Mestra Pro")
-escola = st.text_input("🏢 Escola", "Minha Escola Municipal")
+escola = st.text_input("🏢 Nome da Escola", "Minha Escola")
 
+# --- LÓGICA DE CÁLCULO ---
 def calcular_grade(inicio, dur_aula, h_rec, dur_rec):
     blocos = []
     h_at = datetime.combine(datetime.today(), inicio)
@@ -55,32 +42,25 @@ def calcular_grade(inicio, dur_aula, h_rec, dur_rec):
             blocos.append(f"{i}ª Aula: {ini_s}-{h_at.strftime('%H:%M')}")
     return blocos
 
+# --- ABAS ---
 abas = st.tabs(["🌅 MATUTINO", "☀️ VESPERTINO", "🌙 NOTURNO"])
-turnos = [("Matutino", abas[0]), ("Vespertino", abas[1]), ("Noturno", abas[2])]
+turnos = [("Matutino", "07:07", abas[0]), ("Vespertino", "13:03", abas[1]), ("Noturno", "18:30", abas[2])]
 
-for nome, aba in turnos:
+for nome, h_padrao, aba in turnos:
     with aba:
         with st.sidebar:
-            st.header(f"⚙️ Config {nome}")
-            
-            # CHAVE DE OURO: O componente usa a memória da sessão como valor e salva nela mesma
-            hi = st.time_input(f"Início {nome}", 
-                              value=st.session_state.config[f"{nome}_ini"], 
-                              key=f"time_ini_{nome}")
-            st.session_state.config[f"{nome}_ini"] = hi
-            
-            da = st.number_input(f"Duração Aula (min)", 15, 120, 45, key=f"dur_{nome}")
-            
-            hr = st.time_input(f"Recreio {nome}", 
-                              value=st.session_state.config[f"{nome}_rec"], 
-                              key=f"time_rec_{nome}")
-            st.session_state.config[f"{nome}_rec"] = hr
-            
-            dr = st.number_input(f"Duração Recreio", 5, 60, 20, key=f"dr_val_{nome}")
+            # FORMULÁRIO PARA EVITAR O RESET AUTOMÁTICO
+            with st.form(key=f"form_{nome}"):
+                st.header(f"⚙️ Config {nome}")
+                hi = st.time_input(f"Início {nome}", datetime.strptime(h_padrao, "%H:%M"))
+                da = st.number_input(f"Duração Aula (min)", 15, 120, 45)
+                hr = st.time_input(f"Início Recreio", datetime.strptime("09:15", "%H:%M"))
+                dr = st.number_input(f"Duração Recreio", 5, 60, 20)
+                submit = st.form_submit_button("✅ Aplicar Horários")
 
         horarios = calcular_grade(hi, da, hr, dr)
         dias = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta"]
-        grade_final = {"Horário": horarios}
+        grade_dados = {"Horário": horarios}
         
         cols = st.columns(5)
         for idx, dia in enumerate(dias):
@@ -92,21 +72,20 @@ for nome, aba in turnos:
                         col_dia.append("☕ RECREIO")
                     else:
                         with st.expander(f"⌚ {h}"):
-                            tipo = st.radio("Status", ["Aula", "Vaga"], key=f"tp_{nome}_{dia}_{h}", horizontal=True)
+                            tipo = st.radio("Status", ["Aula", "Vaga"], key=f"t_{nome}_{dia}_{h}", horizontal=True)
                             if tipo == "Aula":
-                                # Sugestões baseadas no que já foi digitado
-                                s_txt = st.text_input("Sala", key=f"s_{nome}_{dia}_{h}")
-                                p_txt = st.text_input("Prof", key=f"p_{nome}_{dia}_{h}")
-                                col_dia.append(f"{s_txt}|{p_txt}" if s_txt else " ")
+                                s = st.text_input("Sala", key=f"s_{nome}_{dia}_{h}")
+                                p = st.text_input("Prof", key=f"p_{nome}_{dia}_{h}")
+                                col_dia.append(f"{s}|{p}" if s else " ")
                             else:
                                 col_dia.append("AULA VAGA")
-                grade_final[dia] = col_dia
+                grade_dados[dia] = col_dia
 
+        st.markdown("---")
         if st.button(f"🚀 GERAR TABELA {nome.upper()}", key=f"btn_{nome}"):
-            st.markdown(f"<h2 style='text-align:center;'>{escola}</h2><h3 style='text-align:center;'>Turno {nome}</h3>", unsafe_allow_html=True)
-            df = pd.DataFrame(grade_final)
-            df_v = df.copy()
-            for d in dias: df_v[d] = df_v[d].apply(lambda x: x.replace("|", "\n") if "|" in x else x)
-            st.table(df_v)
-            st.markdown('<button onclick="window.print()" style="width:100%; padding:10px; background-color:#28a745; color:white; border-radius:5px; cursor:pointer;">📸 SALVAR PRINT</button>', unsafe_allow_html=True)
+            st.markdown(f"<h2 style='text-align:center;'>{escola}</h2>", unsafe_allow_html=True)
+            df = pd.DataFrame(grade_dados)
+            for d in dias: df[d] = df[d].apply(lambda x: x.replace("|", "\n") if "|" in x else x)
+            st.table(df)
+            st.markdown('<button onclick="window.print()" style="width:100%; padding:15px; background-color:#28a745; color:white; border-radius:8px; cursor:pointer;">📸 PRINTAR / SALVAR</button>', unsafe_allow_html=True)
             
