@@ -2,10 +2,9 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 
-# Configuração de Layout
 st.set_page_config(page_title="Grade Mestra Pro", layout="wide")
 
-# CSS para Print e Visual
+# CSS para Print
 st.markdown("""
 <style>
     @media print { .no-print, .stSidebar, button { display: none !important; } }
@@ -18,11 +17,11 @@ st.markdown("""
 st.title("📚 Grade Mestra Pro")
 escola = st.text_input("🏢 Escola", "Minha Escola Municipal")
 
-# --- INICIALIZAÇÃO DA MEMÓRIA (Session State) ---
+# --- INICIALIZAÇÃO DA MEMÓRIA ---
 if 'h_salas' not in st.session_state: st.session_state['h_salas'] = []
 if 'h_profs' not in st.session_state: st.session_state['h_profs'] = []
 
-# Dicionários para manter os horários configurados salvos
+# Inicializa horários se não existirem
 if 'horarios_config' not in st.session_state:
     st.session_state['horarios_config'] = {
         "Matutino": datetime.strptime("07:07", "%H:%M").time(),
@@ -33,7 +32,10 @@ if 'horarios_config' not in st.session_state:
         "Rec_Noturno": datetime.strptime("20:30", "%H:%M").time()
     }
 
-# --- LÓGICA DE HORÁRIO FLEXÍVEL ---
+# Função disparada IMEDIATAMENTE ao mudar o horário
+def atualizar_horario(chave):
+    st.session_state['horarios_config'][chave] = st.session_state[f"input_{chave}"]
+
 def calcular_grade(inicio, dur_aula, h_rec, dur_rec):
     blocos = []
     h_at = datetime.combine(datetime.today(), inicio)
@@ -58,7 +60,6 @@ def calcular_grade(inicio, dur_aula, h_rec, dur_rec):
             blocos.append(f"{i}ª Aula: {ini_s}-{h_at.strftime('%H:%M')}")
     return blocos
 
-# --- ABAS DE TURNOS ---
 abas = st.tabs(["🌅 MATUTINO", "☀️ VESPERTINO", "🌙 NOTURNO"])
 turnos = [("Matutino", abas[0]), ("Vespertino", abas[1]), ("Noturno", abas[2])]
 
@@ -66,15 +67,22 @@ for nome, aba in turnos:
     with aba:
         with st.sidebar:
             st.header(f"⚙️ Config {nome}")
-            # Usando o Session State para manter o horário que você digitar
-            hi = st.time_input(f"Início {nome}", value=st.session_state['horarios_config'][nome], key=f"hi_{nome}")
-            st.session_state['horarios_config'][nome] = hi # Salva a mudança imediatamente
+            
+            # O pulo do gato: usamos on_change para salvar o valor no ato
+            hi = st.time_input(f"Início {nome}", 
+                              value=st.session_state['horarios_config'][nome], 
+                              key=f"input_{nome}", 
+                              on_change=atualizar_horario, 
+                              args=(nome,))
             
             da = st.number_input(f"Duração Aula (min)", 15, 120, 45, key=f"da_{nome}")
             
             rec_key = f"Rec_{nome}"
-            hr = st.time_input(f"Recreio {nome}", value=st.session_state['horarios_config'][rec_key], key=f"hr_{nome}")
-            st.session_state['horarios_config'][rec_key] = hr # Salva a mudança do recreio
+            hr = st.time_input(f"Recreio {nome}", 
+                              value=st.session_state['horarios_config'][rec_key], 
+                              key=f"input_{rec_key}", 
+                              on_change=atualizar_horario, 
+                              args=(rec_key,))
             
             dr = st.number_input(f"Duração Recreio", 5, 60, 20, key=f"dr_{nome}")
         
@@ -116,5 +124,5 @@ for nome, aba in turnos:
             for d in dias:
                 df_view[d] = df_view[d].apply(lambda x: x.replace("|", "\n") if "|" in x else x)
             st.table(df_view)
-            st.markdown(f'<button onclick="window.print()" style="width:100%; padding:15px; background-color:#28a745; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">📸 CLIQUE PARA SALVAR / TIRAR PRINT</button>', unsafe_allow_html=True)
-            
+            st.markdown('<button onclick="window.print()" style="width:100%; padding:15px; background-color:#28a745; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">📸 SALVAR / PRINTAR</button>', unsafe_allow_html=True)
+                                    
