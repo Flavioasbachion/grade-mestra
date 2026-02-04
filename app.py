@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 # Configuração de Layout
 st.set_page_config(page_title="Grade Mestra Pro", layout="wide")
 
-# CSS para garantir cores no Print e visual limpo
+# CSS para Print e Visual
 st.markdown("""
 <style>
     @media print { .no-print, .stSidebar, button { display: none !important; } }
@@ -18,9 +18,20 @@ st.markdown("""
 st.title("📚 Grade Mestra Pro")
 escola = st.text_input("🏢 Escola", "Minha Escola Municipal")
 
-# --- MEMÓRIA DO APP (Persistência de dados) ---
+# --- INICIALIZAÇÃO DA MEMÓRIA (Session State) ---
 if 'h_salas' not in st.session_state: st.session_state['h_salas'] = []
 if 'h_profs' not in st.session_state: st.session_state['h_profs'] = []
+
+# Dicionários para manter os horários configurados salvos
+if 'horarios_config' not in st.session_state:
+    st.session_state['horarios_config'] = {
+        "Matutino": datetime.strptime("07:07", "%H:%M").time(),
+        "Vespertino": datetime.strptime("13:03", "%H:%M").time(),
+        "Noturno": datetime.strptime("18:30", "%H:%M").time(),
+        "Rec_Matutino": datetime.strptime("09:15", "%H:%M").time(),
+        "Rec_Vespertino": datetime.strptime("15:15", "%H:%M").time(),
+        "Rec_Noturno": datetime.strptime("20:30", "%H:%M").time()
+    }
 
 # --- LÓGICA DE HORÁRIO FLEXÍVEL ---
 def calcular_grade(inicio, dur_aula, h_rec, dur_rec):
@@ -49,15 +60,22 @@ def calcular_grade(inicio, dur_aula, h_rec, dur_rec):
 
 # --- ABAS DE TURNOS ---
 abas = st.tabs(["🌅 MATUTINO", "☀️ VESPERTINO", "🌙 NOTURNO"])
-turnos = [("Matutino", "07:07", abas[0]), ("Vespertino", "13:03", abas[1]), ("Noturno", "18:30", abas[2])]
+turnos = [("Matutino", abas[0]), ("Vespertino", abas[1]), ("Noturno", abas[2])]
 
-for nome, h_p, aba in turnos:
+for nome, aba in turnos:
     with aba:
         with st.sidebar:
             st.header(f"⚙️ Config {nome}")
-            hi = st.time_input(f"Início {nome}", datetime.strptime(h_p, "%H:%M"), key=f"hi_{nome}")
+            # Usando o Session State para manter o horário que você digitar
+            hi = st.time_input(f"Início {nome}", value=st.session_state['horarios_config'][nome], key=f"hi_{nome}")
+            st.session_state['horarios_config'][nome] = hi # Salva a mudança imediatamente
+            
             da = st.number_input(f"Duração Aula (min)", 15, 120, 45, key=f"da_{nome}")
-            hr = st.time_input(f"Recreio {nome}", datetime.strptime("09:15", "%H:%M"), key=f"hr_{nome}")
+            
+            rec_key = f"Rec_{nome}"
+            hr = st.time_input(f"Recreio {nome}", value=st.session_state['horarios_config'][rec_key], key=f"hr_{nome}")
+            st.session_state['horarios_config'][rec_key] = hr # Salva a mudança do recreio
+            
             dr = st.number_input(f"Duração Recreio", 5, 60, 20, key=f"dr_{nome}")
         
         horarios = calcular_grade(hi, da, hr, dr)
@@ -74,23 +92,16 @@ for nome, h_p, aba in turnos:
                         col_dia.append("☕ RECREIO")
                     else:
                         with st.expander(f"⌚ {h}"):
-                            # OPÇÃO DE AULA VAGA VOLTOU
                             tipo = st.radio("Status", ["Aula", "Vaga"], key=f"tp_{nome}_{dia}_{h}", horizontal=True)
-                            
                             if tipo == "Aula":
-                                # MEMÓRIA DE SALAS E PROFS VOLTOU
                                 s_sel = st.selectbox("Sala Salva", [""] + sorted(list(set(st.session_state['h_salas']))), key=f"ss_{nome}_{dia}_{h}")
                                 s_txt = st.text_input("Nova Sala", key=f"s_{nome}_{dia}_{h}")
                                 sala_f = s_sel if s_sel != "" else s_txt
-                                
                                 p_sel = st.selectbox("Prof Salva", [""] + sorted(list(set(st.session_state['h_profs']))), key=f"ps_{nome}_{dia}_{h}")
                                 p_txt = st.text_input("Nova Prof", key=f"p_{nome}_{dia}_{h}")
                                 prof_f = p_sel if p_sel != "" else p_txt
-                                
-                                # Salva na memória se for algo novo
                                 if s_txt and s_txt not in st.session_state['h_salas']: st.session_state['h_salas'].append(s_txt)
                                 if p_txt and p_txt not in st.session_state['h_profs']: st.session_state['h_profs'].append(p_txt)
-                                
                                 col_dia.append(f"{sala_f}|{prof_f}" if sala_f else " ")
                             else:
                                 col_dia.append("AULA VAGA")
@@ -100,18 +111,10 @@ for nome, h_p, aba in turnos:
         if st.button(f"🚀 GERAR TABELA {nome.upper()}", key=f"G_{nome}"):
             st.markdown(f"<h2 style='text-align:center;'>{escola}</h2>", unsafe_allow_html=True)
             st.markdown(f"<h3 style='text-align:center;'>Turno {nome}</h3>", unsafe_allow_html=True)
-            
             df = pd.DataFrame(grade_dados)
-            # Limpeza visual para o Print (substitui o | por quebra de linha)
             df_view = df.copy()
             for d in dias:
                 df_view[d] = df_view[d].apply(lambda x: x.replace("|", "\n") if "|" in x else x)
-            
             st.table(df_view)
+            st.markdown(f'<button onclick="window.print()" style="width:100%; padding:15px; background-color:#28a745; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">📸 CLIQUE PARA SALVAR / TIRAR PRINT</button>', unsafe_allow_html=True)
             
-            st.markdown(f"""
-                <button onclick="window.print()" style="width:100%; padding:15px; background-color:#28a745; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">
-                📸 CLIQUE PARA SALVAR / TIRAR PRINT
-                </button>
-            """, unsafe_allow_html=True)
-                                
