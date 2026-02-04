@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Grade Mestra Pro", layout="wide")
 
-# Estilo para Print e Visualização
+# Estilo para manter cores no Print
 st.markdown("""
 <style>
     @media print { .no-print, .stSidebar, button { display: none !important; } }
@@ -14,12 +14,21 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# --- A CHAVE DA SOLUÇÃO: MEMÓRIA TOTAL ---
+if 'dados' not in st.session_state:
+    st.session_state.dados = {
+        "Matutino_ini": datetime.strptime("07:07", "%H:%M").time(),
+        "Matutino_rec": datetime.strptime("09:15", "%H:%M").time(),
+        "Vespertino_ini": datetime.strptime("13:03", "%H:%M").time(),
+        "Vespertino_rec": datetime.strptime("15:15", "%H:%M").time(),
+        "Noturno_ini": datetime.strptime("18:30", "%H:%M").time(),
+        "Noturno_rec": datetime.strptime("20:30", "%H:%M").time(),
+        "salas_salvas": [],
+        "profs_salvos": []
+    }
+
 st.title("📚 Grade Mestra Pro")
 escola = st.text_input("🏢 Nome da Escola", "Minha Escola")
-
-# --- MEMÓRIA DE SALAS E PROFESSORES ---
-if 'lista_salas' not in st.session_state: st.session_state['lista_salas'] = []
-if 'lista_profs' not in st.session_state: st.session_state['lista_profs'] = []
 
 def calcular_grade(inicio, dur_aula, h_rec, dur_rec):
     blocos = []
@@ -46,23 +55,26 @@ def calcular_grade(inicio, dur_aula, h_rec, dur_rec):
     return blocos
 
 abas = st.tabs(["🌅 MATUTINO", "☀️ VESPERTINO", "🌙 NOTURNO"])
-turnos = [("Matutino", "07:07", abas[0]), ("Vespertino", "13:03", abas[1]), ("Noturno", "18:30", abas[2])]
+turnos = [("Matutino", abas[0]), ("Vespertino", abas[1]), ("Noturno", abas[2])]
 
-for nome, h_padrao, aba in turnos:
+for nome, aba in turnos:
     with aba:
         with st.sidebar:
-            # BLOCO DE CONFIGURAÇÃO PROTEGIDO
-            with st.form(key=f"config_geral_{nome}"):
-                st.header(f"⚙️ Configurar {nome}")
-                hi = st.time_input(f"Início exato", datetime.strptime(h_padrao, "%H:%M"))
-                da = st.number_input(f"Duração Aula (min)", 15, 120, 45)
-                hr = st.time_input(f"Início Recreio", datetime.strptime("09:15", "%H:%M"))
-                dr = st.number_input(f"Duração Recreio", 5, 60, 20)
-                btn_config = st.form_submit_button("🔒 TRAVAR HORÁRIOS")
+            st.header(f"⚙️ Config {nome}")
+            # Vinculamos o valor diretamente à memória da sessão
+            hi = st.time_input(f"Início {nome}", value=st.session_state.dados[f"{nome}_ini"], key=f"ti_{nome}")
+            st.session_state.dados[f"{nome}_ini"] = hi # Salva na hora
+            
+            da = st.number_input(f"Duração Aula (min)", 15, 120, 45, key=f"da_{nome}")
+            
+            hr = st.time_input(f"Início Recreio {nome}", value=st.session_state.dados[f"{nome}_rec"], key=f"tr_{nome}")
+            st.session_state.dados[f"{nome}_rec"] = hr # Salva na hora
+            
+            dr = st.number_input(f"Duração Recreio", 5, 60, 20, key=f"dr_{nome}")
 
         horarios = calcular_grade(hi, da, hr, dr)
         dias = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta"]
-        grade_dados = {"Horário": horarios}
+        grade_final = {"Horário": horarios}
         
         cols = st.columns(5)
         for idx, dia in enumerate(dias):
@@ -76,28 +88,27 @@ for nome, h_padrao, aba in turnos:
                         with st.expander(f"⌚ {h}"):
                             tipo = st.radio("Status", ["Aula", "Vaga"], key=f"tp_{nome}_{dia}_{h}", horizontal=True)
                             if tipo == "Aula":
-                                # OPÇÃO DE SALVAR VOLTOU
-                                s_sel = st.selectbox("Sala Salva", [""] + sorted(list(set(st.session_state['lista_salas']))), key=f"ss_{nome}_{dia}_{h}")
+                                # MEMÓRIA DE SALA/PROF VOLTOU
+                                s_sel = st.selectbox("Sala Salva", [""] + sorted(list(set(st.session_state.dados["salas_salvas"]))), key=f"ss_{nome}_{dia}_{h}")
                                 s_txt = st.text_input("Nova Sala", key=f"s_{nome}_{dia}_{h}")
                                 sala_f = s_sel if s_sel != "" else s_txt
                                 
-                                p_sel = st.selectbox("Prof Salva", [""] + sorted(list(set(st.session_state['lista_profs']))), key=f"ps_{nome}_{dia}_{h}")
+                                p_sel = st.selectbox("Prof Salva", [""] + sorted(list(set(st.session_state.dados["profs_salvos"]))), key=f"ps_{nome}_{dia}_{h}")
                                 p_txt = st.text_input("Nova Prof", key=f"p_{nome}_{dia}_{h}")
                                 prof_f = p_sel if p_sel != "" else p_txt
                                 
-                                # Adiciona à memória
-                                if s_txt and s_txt not in st.session_state['lista_salas']: st.session_state['lista_salas'].append(s_txt)
-                                if p_txt and p_txt not in st.session_state['lista_profs']: st.session_state['lista_profs'].append(p_txt)
+                                if s_txt and s_txt not in st.session_state.dados["salas_salvas"]: st.session_state.dados["salas_salvas"].append(s_txt)
+                                if p_txt and p_txt not in st.session_state.dados["profs_salvos"]: st.session_state.dados["profs_salvos"].append(p_txt)
                                 
                                 col_dia.append(f"{sala_f}|{prof_f}" if sala_f else " ")
                             else:
                                 col_dia.append("AULA VAGA")
-                grade_dados[dia] = col_dia
+                grade_final[dia] = col_dia
 
         if st.button(f"🚀 GERAR TABELA {nome.upper()}", key=f"btn_{nome}"):
-            st.markdown(f"<h2 style='text-align:center;'>{escola}</h2>", unsafe_allow_html=True)
-            df = pd.DataFrame(grade_dados)
+            st.markdown(f"### {escola} - Turno {nome}")
+            df = pd.DataFrame(grade_final)
             for d in dias: df[d] = df[d].apply(lambda x: x.replace("|", "\n") if "|" in x else x)
             st.table(df)
-            st.markdown('<button onclick="window.print()" style="width:100%; padding:15px; background-color:#28a745; color:white; border-radius:8px; cursor:pointer;">📸 SALVAR / PRINTAR</button>', unsafe_allow_html=True)
+            st.markdown('<button onclick="window.print()" style="width:100%; padding:10px; background-color:#28a745; color:white; border-radius:5px;">📸 SALVAR PRINT</button>', unsafe_allow_html=True)
             
