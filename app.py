@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Grade Mestra Pro", layout="wide")
 
-# CSS para Print
+# Estilos de Visualização
 st.markdown("""
 <style>
     @media print { .no-print, .stSidebar, button { display: none !important; } }
@@ -14,27 +14,22 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📚 Grade Mestra Pro")
-escola = st.text_input("🏢 Escola", "Minha Escola Municipal")
-
-# --- INICIALIZAÇÃO DA MEMÓRIA ---
-if 'h_salas' not in st.session_state: st.session_state['h_salas'] = []
-if 'h_profs' not in st.session_state: st.session_state['h_profs'] = []
-
-# Inicializa horários se não existirem
-if 'horarios_config' not in st.session_state:
-    st.session_state['horarios_config'] = {
-        "Matutino": datetime.strptime("07:07", "%H:%M").time(),
-        "Vespertino": datetime.strptime("13:03", "%H:%M").time(),
-        "Noturno": datetime.strptime("18:30", "%H:%M").time(),
-        "Rec_Matutino": datetime.strptime("09:15", "%H:%M").time(),
-        "Rec_Vespertino": datetime.strptime("15:15", "%H:%M").time(),
-        "Rec_Noturno": datetime.strptime("20:30", "%H:%M").time()
+# --- INICIALIZAÇÃO DE MEMÓRIA CRÍTICA ---
+# Isso garante que os horários não resetem ao interagir com a tela
+if 'config' not in st.session_state:
+    st.session_state.config = {
+        "Matutino_ini": datetime.strptime("07:07", "%H:%M").time(),
+        "Matutino_rec": datetime.strptime("09:15", "%H:%M").time(),
+        "Vespertino_ini": datetime.strptime("13:03", "%H:%M").time(),
+        "Vespertino_rec": datetime.strptime("15:15", "%H:%M").time(),
+        "Noturno_ini": datetime.strptime("18:30", "%H:%M").time(),
+        "Noturno_rec": datetime.strptime("20:30", "%H:%M").time(),
+        "salas": [],
+        "profs": []
     }
 
-# Função disparada IMEDIATAMENTE ao mudar o horário
-def atualizar_horario(chave):
-    st.session_state['horarios_config'][chave] = st.session_state[f"input_{chave}"]
+st.title("📚 Grade Mestra Pro")
+escola = st.text_input("🏢 Escola", "Minha Escola Municipal")
 
 def calcular_grade(inicio, dur_aula, h_rec, dur_rec):
     blocos = []
@@ -68,27 +63,24 @@ for nome, aba in turnos:
         with st.sidebar:
             st.header(f"⚙️ Config {nome}")
             
-            # O pulo do gato: usamos on_change para salvar o valor no ato
+            # CHAVE DE OURO: O componente usa a memória da sessão como valor e salva nela mesma
             hi = st.time_input(f"Início {nome}", 
-                              value=st.session_state['horarios_config'][nome], 
-                              key=f"input_{nome}", 
-                              on_change=atualizar_horario, 
-                              args=(nome,))
+                              value=st.session_state.config[f"{nome}_ini"], 
+                              key=f"time_ini_{nome}")
+            st.session_state.config[f"{nome}_ini"] = hi
             
-            da = st.number_input(f"Duração Aula (min)", 15, 120, 45, key=f"da_{nome}")
+            da = st.number_input(f"Duração Aula (min)", 15, 120, 45, key=f"dur_{nome}")
             
-            rec_key = f"Rec_{nome}"
             hr = st.time_input(f"Recreio {nome}", 
-                              value=st.session_state['horarios_config'][rec_key], 
-                              key=f"input_{rec_key}", 
-                              on_change=atualizar_horario, 
-                              args=(rec_key,))
+                              value=st.session_state.config[f"{nome}_rec"], 
+                              key=f"time_rec_{nome}")
+            st.session_state.config[f"{nome}_rec"] = hr
             
-            dr = st.number_input(f"Duração Recreio", 5, 60, 20, key=f"dr_{nome}")
-        
+            dr = st.number_input(f"Duração Recreio", 5, 60, 20, key=f"dr_val_{nome}")
+
         horarios = calcular_grade(hi, da, hr, dr)
         dias = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta"]
-        grade_dados = {"Horário": horarios}
+        grade_final = {"Horário": horarios}
         
         cols = st.columns(5)
         for idx, dia in enumerate(dias):
@@ -102,27 +94,19 @@ for nome, aba in turnos:
                         with st.expander(f"⌚ {h}"):
                             tipo = st.radio("Status", ["Aula", "Vaga"], key=f"tp_{nome}_{dia}_{h}", horizontal=True)
                             if tipo == "Aula":
-                                s_sel = st.selectbox("Sala Salva", [""] + sorted(list(set(st.session_state['h_salas']))), key=f"ss_{nome}_{dia}_{h}")
-                                s_txt = st.text_input("Nova Sala", key=f"s_{nome}_{dia}_{h}")
-                                sala_f = s_sel if s_sel != "" else s_txt
-                                p_sel = st.selectbox("Prof Salva", [""] + sorted(list(set(st.session_state['h_profs']))), key=f"ps_{nome}_{dia}_{h}")
-                                p_txt = st.text_input("Nova Prof", key=f"p_{nome}_{dia}_{h}")
-                                prof_f = p_sel if p_sel != "" else p_txt
-                                if s_txt and s_txt not in st.session_state['h_salas']: st.session_state['h_salas'].append(s_txt)
-                                if p_txt and p_txt not in st.session_state['h_profs']: st.session_state['h_profs'].append(p_txt)
-                                col_dia.append(f"{sala_f}|{prof_f}" if sala_f else " ")
+                                # Sugestões baseadas no que já foi digitado
+                                s_txt = st.text_input("Sala", key=f"s_{nome}_{dia}_{h}")
+                                p_txt = st.text_input("Prof", key=f"p_{nome}_{dia}_{h}")
+                                col_dia.append(f"{s_txt}|{p_txt}" if s_txt else " ")
                             else:
                                 col_dia.append("AULA VAGA")
-                grade_dados[dia] = col_dia
-        
-        st.markdown("---")
-        if st.button(f"🚀 GERAR TABELA {nome.upper()}", key=f"G_{nome}"):
-            st.markdown(f"<h2 style='text-align:center;'>{escola}</h2>", unsafe_allow_html=True)
-            st.markdown(f"<h3 style='text-align:center;'>Turno {nome}</h3>", unsafe_allow_html=True)
-            df = pd.DataFrame(grade_dados)
-            df_view = df.copy()
-            for d in dias:
-                df_view[d] = df_view[d].apply(lambda x: x.replace("|", "\n") if "|" in x else x)
-            st.table(df_view)
-            st.markdown('<button onclick="window.print()" style="width:100%; padding:15px; background-color:#28a745; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">📸 SALVAR / PRINTAR</button>', unsafe_allow_html=True)
-                                    
+                grade_final[dia] = col_dia
+
+        if st.button(f"🚀 GERAR TABELA {nome.upper()}", key=f"btn_{nome}"):
+            st.markdown(f"<h2 style='text-align:center;'>{escola}</h2><h3 style='text-align:center;'>Turno {nome}</h3>", unsafe_allow_html=True)
+            df = pd.DataFrame(grade_final)
+            df_v = df.copy()
+            for d in dias: df_v[d] = df_v[d].apply(lambda x: x.replace("|", "\n") if "|" in x else x)
+            st.table(df_v)
+            st.markdown('<button onclick="window.print()" style="width:100%; padding:10px; background-color:#28a745; color:white; border-radius:5px; cursor:pointer;">📸 SALVAR PRINT</button>', unsafe_allow_html=True)
+            
